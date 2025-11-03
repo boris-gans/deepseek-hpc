@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import torch
+
 from pathlib import Path
 from typing import Iterable, List, Sequence
-
-try:
-    import torch
-except ImportError:  # pragma: no cover - helpful runtime message
-    torch = None
 
 from . import utils
 

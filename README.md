@@ -39,5 +39,5 @@ python -m src.orchestrator --input data/sample_inputs.txt --local_debug --num_wo
 - `src/inference.py` exposes the CLI entry point. Pass `--local_debug` to bypass DeepSpeed/NCCL setup and run a lightweight PyTorch-only flow that verifies I/O, batching, and logging.
 - `src/orchestrator.py` simulates distributed request handling with threads so you can refine orchestration logic before running under Slurm.
 - `src/utils.py` provides shared logging and performance tracking helpers (throughput, latency, CPU timings).
-
-When you are ready to execute on the cluster, extend `run_distributed_stub` in both modules with DeepSpeed initialization, NCCL process group configuration, and Slurm environment handling.
+- `results/` is where we store the system performance, feeding directly into the "performance and scaling analysis" section of the paper. It answers speed, effecienty and scalability
+- `eval/`is where we perform model quality evaluation. It answers model correctness, and if precision or sharding affect model quality
