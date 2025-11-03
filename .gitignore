@@ -1,0 +1,10 @@
+.venv/
+
+*.pdf
+*.jsonl
+
+/results/logs/*
+/results/plots/*
+/results/profiling/*
+
+*/__pycache__
