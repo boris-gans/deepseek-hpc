@@ -1,18 +1,19 @@
-"""CLI entry point for DeepSeek inference with local debug mode."""
+"""Runtime helpers for both local debug and distributed inference."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import torch
-
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
-from . import utils
+import torch
+
+from .. import utils
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments for the inference entrypoint."""
     parser = argparse.ArgumentParser(
         description="DeepSeek distributed inference entry point."
     )
@@ -37,7 +38,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--model_name",
         type=str,
-        default="deepseek-v3.1",
+        default="meta-llama/Llama-3.3-70B-Instruct",
         help="Model identifier used for remote execution.",
     )
     parser.add_argument(
@@ -54,12 +55,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def load_prompts(path: Path) -> List[str]:
+    """Load newline-delimited prompts, ensuring the file exists."""
     if not path.exists():
         raise FileNotFoundError(f"Input file not found: {path}")
     return [line.strip() for line in path.read_text().splitlines() if line.strip()]
 
 
 def chunked(items: Sequence[str], batch_size: int) -> Iterable[List[str]]:
+    """Yield fixed-size chunks from the provided sequence."""
     batch: List[str] = []
     for item in items:
         batch.append(item)
@@ -70,7 +73,8 @@ def chunked(items: Sequence[str], batch_size: int) -> Iterable[List[str]]:
         yield batch
 
 
-def _build_debug_model():
+def _build_debug_model() -> torch.nn.Module:
+    """Construct the toy PyTorch module used for CPU-only debugging."""
     if torch is None:
         raise ImportError(
             "PyTorch is required for --local_debug mode. Install torch before running."
@@ -80,12 +84,13 @@ def _build_debug_model():
         """Tiny module that maps ASCII codes to a scalar score."""
 
         def __init__(self) -> None:
+            """Initialize the projection layer with deterministic weights."""
             super().__init__()
             self.proj = torch.nn.Linear(1, 1, bias=False)
             torch.nn.init.constant_(self.proj.weight, 1.0 / 255.0)
 
-        def forward(self, inputs: torch.Tensor) -> torch.Tensor:  # (batch, seq)
-            # Compute mean ASCII value per prompt as a toy stand-in for logits.
+        def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+            """Compute mean ASCII value per prompt as a stand-in for logits."""
             return inputs.mean(dim=1, keepdim=True)
 
     return SimpleDebugModel()
@@ -97,6 +102,7 @@ def run_local_debug(
     batch_size: int,
     tracker: utils.MetricsTracker,
 ) -> List[dict]:
+    """Execute the CPU-only debug path and emit mock completions."""
     model = _build_debug_model()
     model.eval()
 
@@ -141,6 +147,7 @@ def run_local_debug(
 
 
 def run_distributed_stub(args: argparse.Namespace) -> None:
+    """Placeholder for the cluster execution path."""
     raise NotImplementedError(
         "Distributed DeepSpeed inference path not yet implemented. "
         "Integrate cluster initialization, tensor parallel groups, and NCCL setup here."
@@ -148,6 +155,7 @@ def run_distributed_stub(args: argparse.Namespace) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    """CLI entry point for both local debug and forthcoming cluster modes."""
     args = parse_args(argv)
     logger = utils.setup_logging(level=args.log_level.upper())
     tracker = utils.MetricsTracker()
@@ -187,6 +195,3 @@ def main(argv: Sequence[str] | None = None) -> None:
         for record in results:
             logger.info("Result: %s", json.dumps(record))
 
-
-if __name__ == "__main__":  # pragma: no cover
-    main()

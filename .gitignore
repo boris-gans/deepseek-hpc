@@ -2,6 +2,7 @@
 
 *.pdf
 *.jsonl
+*.pyc
 
 /results/logs/*
 /results/plots/*
