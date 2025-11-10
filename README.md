@@ -1,12 +1,12 @@
 # Distributed Inference of DeepSeek v3.1 on Multi-GPU Clusters
 
 ## Overview
-Large language models such as DeepSeek v3.1 are too large to fit on a single GPU, so even inference requires multi-GPU, multi-node execution.  
+Large language models such as Llama 3.3 70B are too large to fit on a single GPU, so even inference requires multi-GPU, multi-node execution.  
 This project implements and benchmarks a distributed inference pipeline using **PyTorch** with **DeepSpeed Inference** (which uses **NCCL** for GPU communication).  
 CPU nodes are optionally used for orchestration and preprocessing, allowing us to explore hybrid CPU–GPU performance.
 
 ## Objectives
-- Run DeepSeek v3.1 inference on 2–3 GPU nodes under **Slurm**.
+- Run Llama 3.3 70B inference on 2–3 GPU nodes under **Slurm**.
 - Measure "correctness" of the model through comparing a set of 20 prompts with a baseline  
 - Measure scaling (throughput / latency / efficiency) from 1 → N nodes.
 - Profile compute vs. communication time using **Nsight Systems**, **perf**, and **sacct**.  
@@ -41,3 +41,9 @@ python -m src.orchestrator --input data/sample_inputs.txt --local_debug --num_wo
 - `src/utils.py` provides shared logging and performance tracking helpers (throughput, latency, CPU timings).
 - `results/` is where we store the system performance, feeding directly into the "performance and scaling analysis" section of the paper. It answers speed, effecienty and scalability
 - `eval/`is where we perform model quality evaluation. It answers model correctness, and if precision or sharding affect model quality
+
+
+## Resources
+- **Model:** https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
+- **Hosting:** https://app.primeintellect.ai/dashboard/clusters?gpu_type=H100_80GB&image=ubuntu_22_cuda_12&location=Cheapest&quantity=8
+

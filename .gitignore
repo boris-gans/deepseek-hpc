@@ -8,3 +8,5 @@
 /results/profiling/*
 
 */__pycache__
+
+notes.md

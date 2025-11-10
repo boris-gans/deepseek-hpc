@@ -25,7 +25,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=None,
+        default="results/local_debug.jsonl",
         help="Optional path to store JSONL completions.",
     )
     parser.add_argument(
