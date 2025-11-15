@@ -49,186 +49,58 @@ This table shows the **per GPU memory**, assuming 8 GPUs (TPxPP always equals 8,
 
 <hr>
 
-## Cluster Configurations
-We'll explore multiple cluster configurations and parallelism techniques to identify bottlenecks and improve performance. We'll deploy a cluster on [PrimeIntellect](https://docs.primeintellect.ai/introduction), with 8 H100 Nvidia GPUs (80GB each). 
+## Cluster Configuration
+Our model will implement two parallelism techniques:
 
-<hr>
+- Tensor Parallelism (TP) across all GPUs within a node
+- Pipeline Parallelism (PP) across nodes
 
-### TP-only across nodes:
+By doing so, we ensure the model fits within a node (through TP) and we have a clean scaling axis (through PP). Our scaling experiments will go as follows:
 
-    a. Nodes/GPUs: 8 nodes x 1 GPU each
-
-    b. Parallelism: TP = 8, PP = 1, DP = 1
-
-    c. Hypothesis of issues: Low GPU utilization, NCCL time dominates
-
-TP requires sync at every layer, meaning lots of network traffic. If this is done across nodes it will create huge latency/idle bubbles.
-
-**Cluster Topology:**
-
-                         ┌─────────────────────────────────────────────────────────────┐
-                         │            DeepSeek-70B (Cross-node TP only)               │
-                         └─────────────────────────────────────────────────────────────┘
-                                              │
-                                              ▼
-                           ┌──────────────────────────────────┐
-                           │        Input Prompt Batch        │
-                           └──────────────────────────────────┘
-                                              │
-                                              ▼
-         ┌──────────────────────────────────────────────────────────────────────────────┐
-         │               Tensor Parallel Group (size = 8, across 8 nodes)               │
-         │------------------------------------------------------------------------------│
-         │ Node0 (GPU0) ─┐                                                             │
-         │ Node1 (GPU1) ─┼───╮                                                         │
-         │ Node2 (GPU2) ─┼───┼─── NCCL all-reduce / all-gather (per layer) ────────────┤
-         │ Node3 (GPU3) ─┼───┤                                                         │
-         │ Node4 (GPU4) ─┼───┤   <─── High-latency InfiniBand / Ethernet links ───>    │
-         │ Node5 (GPU5) ─┼───┤                                                         │
-         │ Node6 (GPU6) ─┼───┤                                                         │
-         │ Node7 (GPU7) ─┘                                                             │
-         └──────────────────────────────────────────────────────────────────────────────┘
-                                              │
-                                              ▼
-                                  ┌────────────────────────┐
-                                  │  Final Model Output    │
-                                  └────────────────────────┘
+  | Nodes | GPUs/node | TP | PP | Total GPUs |
+  | ----- | --------- | -- | -- | ---------- |
+  | 1     | 2         | 2  | 1  | 2          |
+  | 2     | 2         | 2  | 2  | 4          |
+  | 3     | 2         | 2  | 3  | 8          |
 
 
-<hr>
+### Cluster Topology:
 
-### PP-only across nodes:
+                    ┌─────────────────────────────────────────────────────────────┐
+                    │                DeepSeek-70B Inference Cluster               │
+                    └─────────────────────────────────────────────────────────────┘
+                                                  │
+                                                  ▼
+                                  ┌──────────────────────────────────┐
+                                  │        Input Prompt Batch        │
+                                  └──────────────────────────────────┘
+                                                  │
+                              ┌───────────────────┼──────────────────────┐
+                              │                   │                      │
+                              ▼                   ▼                      ▼
 
-    a. Nodes/GPUs: 8 nodes x 1 GPU each
+                    ┌────────────────────-─┐   ┌────────────────────-─┐   ┌─────────────────────┐
+                    │  Node 0 (Stage 0)    │   │  Node 1 (Stage 1)    │   │  Node 2 (Stage 2)   │
+                    │  Layers 0–N/3        │   │  Layers N/3–2N/3     │   │  Layers 2N/3–N      │
+                    │  Tensor Parallel = 2 │   │  Tensor Parallel = 2 │   │  Tensor Parallel = 2│
+                    └─────────────────────-┘   └────────────────────-─┘   └─────────────────────┘
+                              │                   │                      │
+                              ▼                   ▼                      ▼
 
-    b. Parallelism: TP = 1, PP = 8, DP = 1
+                        ┌───────────────────┐      ┌───────────────────┐      ┌───────────────────┐
+                        │ GPU0 ──┐          │      │ GPU2 ──┐          │      │ GPU4 ──┐          │
+                        │ GPU1 ──┼─ NVLink ─┼─ TP  │ GPU3 ──┼─ NVLink ─┼─ TP  │ GPU5 ──┼─ NVLink ─┼─ TP
+                        │        └─ intra ──┘      │        └─ intra ──┘      │        └─ intra ──┘
+                        │       node comm          │       node comm          │       node comm
+                        └───────────────────┘      └───────────────────┘      └───────────────────┘
+                              │                   │                      │
+                              │<────────── Pipeline (activations, KV-cache) ───────────│
+                              │                   │                      │
+                              ▼                   ▼                      ▼
 
-    c. Expected: good stability, the overall latency will be shaped by pipeline bubbles
-
-Only pipeline traffic across nodes, meaning its done once per micro-batch.
-
-**Cluster Topology:**
-
-                            ┌─────────────────────────────────────────────────────────────┐
-                            │             DeepSeek-70B (PP=8, TP=1) Cluster               │
-                            └─────────────────────────────────────────────────────────────┘
-                                                │
-                                                ▼
-                            ┌──────────────────────────────────┐
-                            │        Input Prompt Batch        │
-                            └──────────────────────────────────┘
-                                                │
-                                                ▼
-    ┌─────────────────────────────┬─────────────────────────────┬─────────────────────────────┬─────────────────────────────┐
-    │         Node 0 (GPU0)       │         Node 1 (GPU1)       │         Node 2 (GPU2)       │         Node 3 (GPU3)       │
-    │ Layers 0–N/8                │ Layers N/8–2N/8             │ Layers 2N/8–3N/8            │ Layers 3N/8–4N/8            │
-    │ Pipeline Stage 0            │ Pipeline Stage 1            │ Pipeline Stage 2            │ Pipeline Stage 3            │
-    └──────────────┬──────────────┴──────────────┬──────────────┴──────────────┬──────────────┴──────────────┬──────────────┘
-                │                             │                             │                             │
-                ▼                             ▼                             ▼                             ▼
-    ┌─────────────────────────────┬─────────────────────────────┬─────────────────────────────┬─────────────────────────────┐
-    │         Node 4 (GPU4)       │         Node 5 (GPU5)       │         Node 6 (GPU6)       │         Node 7 (GPU7)       │
-    │ Layers 4N/8–5N/8            │ Layers 5N/8–6N/8            │ Layers 6N/8–7N/8            │ Layers 7N/8–N               │
-    │ Pipeline Stage 4            │ Pipeline Stage 5            │ Pipeline Stage 6            │ Pipeline Stage 7            │
-    └──────────────┬──────────────┴──────────────┬──────────────┴──────────────┬──────────────┴──────────────┬──────────────┘
-                │                             │                             │                             │
-                │─────── Activations / KV-cache (Inter-node transfers) ─────│
-                                                ▼
-                                    ┌────────────────────────┐
-                                    │  Final Model Output    │
-                                    └────────────────────────┘
-
-<hr>
-
-### TP-only single node:
-
-    a. Nodes/GPUs: 1 node x 8 GPUs
-
-    b. Parallelism: TP = 8, PP = 1, DP = 1
-
-    c. Expected: Strong baseline with high utilization
-
-The per-layer sync now occurs on NVLink within a node, ensuring traffic is must faster at each sync (per layer).
-
-**Cluster Topology:**
-
-                         ┌─────────────────────────────────────────────────────────────┐
-                         │          DeepSeek-70B (Single-node TP=8) Cluster            │
-                         └─────────────────────────────────────────────────────────────┘
-                                              │
-                                              ▼
-                           ┌──────────────────────────────────┐
-                           │        Input Prompt Batch        │
-                           └──────────────────────────────────┘
-                                              │
-                                              ▼
-         ┌──────────────────────────────────────────────────────────────────────────────┐
-         │                       Node 0 — NVLink / NVSwitch Fabric                      │
-         │------------------------------------------------------------------------------│
-         │   GPU0 ─┐                                                                    │
-         │   GPU1 ─┼───╮                                                                │
-         │   GPU2 ─┼───┼─── NCCL all-reduce / all-gather (per layer, intra-node) ───────┤
-         │   GPU3 ─┼───┤                                                                │
-         │   GPU4 ─┼───┤                                                                │
-         │   GPU5 ─┼───┤                                                                │
-         │   GPU6 ─┼───┤                                                                │
-         │   GPU7 ─┘   │                                                                │
-         │------------------------------------------------------------------------------│
-         │ All communication on NVLink/NVSwitch (~900 GB/s)                             │
-         └──────────────────────────────────────────────────────────────────────────────┘
-                                              │
-                                              ▼
-                                  ┌────────────────────────┐
-                                  │  Final Model Output    │
-                                  └────────────────────────┘
-
-<hr>
-
-### Hybrid TP-intra + PP-inter:
-
-    a. Nodes/GPUs: 2 nodes x 4 GPUs
-
-    b. Parallelism: TP = 4 (within node), PP = 2 (across nodes), DP = 1
-
-    c. Expected: The best combination of latency and throughput, with a healthy comm/comp ratio
-
-The hybrid setup allows us to make good use of both the NVLink and the large quanitiy of nodes we have available.
-
-**Cluster Topology:**
-
-                         ┌─────────────────────────────────────────────────────────────┐
-                         │                DeepSeek-70B Inference Cluster               │
-                         └─────────────────────────────────────────────────────────────┘
-                                              │
-                                              ▼
-                           ┌──────────────────────────────────┐
-                           │        Input Prompt Batch        │
-                           └──────────────────────────────────┘
-                                              │
-                        ┌─────────────────────┴─────────────────────┐
-                        │                                           │
-                        ▼                                           ▼
-             ┌─────────────────────┐                    ┌─────────────────────┐
-             │   Node 0 (Stage 0)  │                    │   Node 1 (Stage 1)  │
-             │ Layers 0-N/2        │                    │ Layers N/2-N        │
-             │ Tensor Parallel = 4 │                    │ Tensor Parallel = 4 │
-             └─────────────────────┘                    └─────────────────────┘
-                        │                                           │
-                        ▼                                           ▼
-        ┌──────────────────────────────┐             ┌──────────────────────────────┐
-        │   GPU0 ──┐                   │             │   GPU4 ──┐                   │
-        │   GPU1 ──┼── NVLink/NCCL ────┼─ TP Group   │   GPU5 ──┼── NVLink/NCCL ────┼─ TP Group
-        │   GPU2 ──┼─── intra-node ────┤             │   GPU6 ──┼─── intra-node ────┤
-        │   GPU3 ──┘ communication     │             │   GPU7 ──┘ communication     │
-        └──────────────────────────────┘             └──────────────────────────────┘
-                        │                                           │
-                        │<────────────  Pipeline  ────────────────►│
-                        │         (activations, KV-cache)          │
-                        ▼                                           ▼
-                 ┌────────────────┐                         ┌────────────────┐
-                 │ Partial Output │                         │ Final Output   │
-                 └────────────────┘                         └────────────────┘
-
+                      ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
+                      │  Partial Out   │   │  Partial Out   │   │   Final Output │
+                      └────────────────┘   └────────────────┘   └────────────────┘
 
 
 ## Quick Start

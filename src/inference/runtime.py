@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Iterable, List, Sequence
+from dotenv import load_dotenv
 
 import torch
 
 from .. import utils
+from data.prompts import PromptRepository, PromptFileSet
+from data.table import PromptDataFrameBuilder
+
+load_dotenv()
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -28,6 +34,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default="results/local_debug.jsonl",
         help="Optional path to store JSONL completions.",
+    )
+    parser.add_argument(
+        "--override",
+        type=bool,
+        default=True,
+        help="Reuse existing dataframes saved as parquets earlier.",
     )
     parser.add_argument(
         "--batch_size",
@@ -161,10 +173,35 @@ def main(argv: Sequence[str] | None = None) -> None:
     tracker = utils.MetricsTracker()
 
     logger.info("Loading prompts from %s", args.input)
-    prompts = load_prompts(args.input)
-    if not prompts:
-        logger.warning("No prompts found in %s. Exiting early.", args.input)
-        return
+
+    df = None
+    df_acc = None
+
+    if not args.override:
+        if Path(os.getenv("SAVE_PATH_ACC")).exists():
+            df_builder = PromptDataFrameBuilder()
+            df_acc = df_builder.load_df_from_parquet(path=os.getenv("SAVE_PATH_ACC"))
+
+        if df_acc is None and Path(os.getenv("SAVE_PATH_BASE")).exists():
+            # If df_acc is a valid df then we don't care about the base df
+            df_builder = PromptDataFrameBuilder()
+            df = df_builder.load_df_from_parquet(path=os.getenv("SAVE_PATH_BASE"))
+
+    if df_acc is None and df is None:
+        # Skip building the base df if either DataFrames already exist
+        prompt_file_set = PromptFileSet(path_2k=os.getenv("PATH_2K"), path_4k=os.getenv("PATH_4K"))
+        prompt_repository = PromptRepository(file_set=prompt_file_set)
+        prompts = prompt_repository.load_all()
+
+        df_builder = PromptDataFrameBuilder(prompts=prompts)
+        df = df_builder.build()
+
+        df_builder.persist(path=os.getenv("SAVE_PATH_BASE"))
+
+    # openai call
+    # check for df_acc, if None then load
+        # otherwise, continue with cluster inference (or debug inference)
+
 
     logger.info(
         "Starting inference (%s mode) with batch_size=%d",
