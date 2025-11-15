@@ -1,4 +1,4 @@
-# Distributed Inference Build Plan
+# Distributed Inference Runtime Plan
 
 This document captures the class-based layout and execution flow for the revised pipeline described in `README.md`. It assumes a local orchestration node plus a Slurm-managed GPU cluster.
 
@@ -55,3 +55,126 @@ This document captures the class-based layout and execution flow for the revised
    - `SlurmJobManager` submits, monitors, and triggers data ingestion when outputs arrive.
 5. **Ingest job outputs** with `ResultCollector`, append to the shared DataFrame, and checkpoint to `results/run_<timestamp>.parquet`.
 6. **Compute correctness metrics** (outside the cluster) and export a summary (CSV/Markdown) comparing all four strategies.
+
+
+
+# Build steps
+
+### PromptFileSet.validate  
+*src/data/prompts.py (line 29)*  
+Verifies that the 2k/4k prompt files exist, contain exactly 20 records, and have aligned IDs.
+
+### PromptFileSet.iter_records  
+*src/data/prompts.py (line 33)*  
+Scans both files, attaches `prompt_id`, `variant`, and `token_budget`, and yields deterministic `PromptRecord` objects for downstream sharding.
+
+### PromptRepository.load_all  
+*src/data/prompts.py (line 45)*  
+Loads and caches the full list of prompt records by invoking the validated file-set iterator exactly once.
+
+### PromptRepository.get_by_id  
+*src/data/prompts.py (line 49)*  
+Filters the cached prompt records to provide requested prompt variants to strategy-specific shard builders.
+
+### PromptDataFrameBuilder.build  
+*src/data/table.py (line 21)*  
+Constructs the canonical pandas DataFrame containing all schema fields (prompt metadata plus placeholder completion/latency columns).
+
+### PromptDataFrameBuilder.persist  
+*src/data/table.py (line 25)*  
+Writes the DataFrame (likely Parquet) so Slurm jobs can reuse it.
+
+### OpenAICompletionClient.complete_prompt / complete_batch / normalize_response  
+*src/inference/openai_client.py (lines 16–25)*  
+Wraps the OpenAI SDK: authenticates calls, performs single/batch inference with retry/backoff, and normalizes response payloads into fields like `text` and `latency_ms` for the baseline table.
+
+### LocalInferenceRunner  
+*src/inference/local_runner.py*  
+- **run (line 24)**: Iterates through DataFrame rows, calls the completion client, and stores completions/latencies.  
+- **persist (line 28)**: Saves the augmented table (e.g., `results/baseline_prompts.parquet`).  
+- **attach_metrics (line 32)**: Adds aggregated timing columns needed by downstream evaluators.
+
+---
+
+# Cluster Runtime & Node Workers
+
+### run_distributed_stub  
+*src/inference/runtime.py (line 149)*  
+Cluster-branch entry point: should initialize DeepSpeed/NCCL, parse CLI args, and delegate to Slurm/node-runtime helpers.
+
+### Node-level helpers  
+*src/inference/node_runtime.py (lines 9–41)*  
+
+- **initialize_distributed_environment**: Configure NCCL/torch.distributed for the chosen parallelism strategy.  
+- **configure_parallel_groups**: Form TP/PP/DP process groups per rank.  
+- **load_model_weights**: Load the correct tensor shard (likely via DeepSpeed engine initialization).  
+- **prepare_prompt_shard**: Retrieve per-rank prompt subset.  
+- **run_generation_loop**: Perform inference over local batches.  
+- **persist_rank_outputs**: Write JSONL/Parquet outputs plus traces to shared storage.  
+- **finalize_rank**: Report metrics/profiling back to the controller.
+
+---
+
+# Strategy Orchestration & Slurm Integration
+
+### Strategy implementations  
+*src/parallelism/strategy.py (lines 44–157)*  
+All four strategy classes must implement:
+
+- **describe_topology**  
+- **slurm_constraints**  
+- **deepspeed_args**  
+- **expected_jobs**  
+- **postprocess**
+
+These must match the configurations described in `README.md`.
+
+### DistributedExperimentPipeline  
+*src/orchestration/pipeline.py (lines 17–26)*  
+Responsible for orchestrating strategy execution:
+
+- `run`: Execute all strategies in order.  
+- `run_strategy`: Submit the job, wait for completion, collect outputs.  
+- `collect_results`: Gather all artifacts and expose them to the metrics stage.
+
+### SlurmJobFactory  
+*src/slurm/job_factory.py (lines 33–41)*  
+Builds Slurm job assets from strategies:
+
+- **create_config**: Convert strategy specs into #SBATCH parameters.  
+- **render_script**: Produce executable sbatch shell script (likely running Apptainer + `python -m src.inference.runtime`).  
+- **script_path**: Provide deterministic location for the script.
+
+### SlurmJobManager  
+*src/slurm/job_manager.py (lines 18–27)*  
+Wraps Slurm operations:
+
+- **submit**: Call `sbatch`.  
+- **monitor**: Poll `squeue`/`sacct` until job completion.  
+- **collect_artifacts**: Trigger result collection when logs and outputs appear.
+
+---
+
+# Result Evaluation & Reporting
+
+### ResultCollector  
+*src/results/collector.py (lines 21–34)*  
+
+- **ingest_run**: Read each strategy’s output directory.  
+- **merge**: Combine results into unified structures.  
+- **to_dataframe**: Convert artifacts to a consolidated DataFrame.  
+- **iter_traces**: Yield trace files (e.g., Nsight).
+
+### CorrectnessEvaluator  
+*src/metrics/correctness.py (lines 20–28)*  
+
+- **evaluate**: Compare completions vs. baseline references.  
+- **score_prompt**: Compute string distance, similarity, etc.  
+- **summarize**: Produce aggregate correctness statistics per strategy/variant.
+
+### RunSummary  
+*src/metrics/report.py (lines 20–28)*  
+
+- **to_markdown**: Produce publication-ready Markdown tables.  
+- **to_csv**: Export metrics to CSV.  
+- **build_plots**: Create plots such as latency vs. accuracy.
