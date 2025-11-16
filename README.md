@@ -104,8 +104,29 @@ By doing so, we ensure the model fits within a node (through TP) and we have a c
 
 
 ## Quick Start
+**For now (dev):**
 ```bash
-git clone https://github.com/<your-org>/deepseek-hpc.git
+git clone https://github.com/boris-gans/distributed-inference.git
+cd distributed-inference
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Default to --override and all variants with no limit (40 prompts - careful this is a lot of tokens)
+python -m src.inference
+
+# Override flag to skip parquet loading (if available) and re-construct all df's
+python -m src.inference --override 
+
+# No-override flag to load df's from parquet (if available) and skip df construction
+python -m src.inference --no-override 
+
+# Variant flag to load only 2k/4k prompts, limit flag to specify amount of prompts to load from each variant
+python -m src.inference --override --variant=2k --limit=10
+```
+
+**Outdated:**
+```bash
+git clone https://github.com/boris-gans/distributed-inference.git
 cd deepseek-hpc/env
 apptainer build deepseek.sif project.def
 sbatch slurm/submit_inference.sbatch
