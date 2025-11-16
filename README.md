@@ -126,6 +126,7 @@ python -m src.orchestrator --input data/sample_inputs.txt --local_debug --num_wo
 
 
 ## Resources
-- **Model:** https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
-- **Hosting:** https://app.primeintellect.ai/dashboard/clusters?gpu_type=H100_80GB&image=ubuntu_22_cuda_12&location=Cheapest&quantity=8
-
+- **Hosting Updated:** https://fireworks.ai/
+- **Model Choices:**
+  - https://huggingface.co/openai/gpt-oss-20b
+  - https://huggingface.co/openai/gpt-oss-120b

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Optional
 
 import pandas as pd
 
@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 class PromptDataFrameBuilder:
     """Creates the shared DataFrame used across local and cluster runs."""
 
-    def __init__(self, prompts: Sequence[PromptRecord] | None) -> None:
+    def __init__(self, prompts: Optional[Sequence[PromptRecord]] = None) -> None:
         """Capture the prompt records that will populate the table."""
         self._prompts = prompts
         self._df: pd.DataFrame | None = None
 
-    def build(self) -> "pd.DataFrame":  # type: ignore[name-defined]
+    def build(self) -> pd.DataFrame:
         """Materialize an in-memory pandas DataFrame with the canonical schema."""
         if self._prompts is None:
             logger.error("Cannot build dataframe if no prompts have been loaded.")
@@ -36,7 +36,7 @@ class PromptDataFrameBuilder:
                 "variant": p.variant,
                 "prompt": p.prompt,
                 "token_budget": p.token_budget,
-                "source_file": p.source_file,
+                "source_file": str(p.source_file) if p.source_file else None,
             }
             for p in self._prompts
         ]
@@ -54,6 +54,7 @@ class PromptDataFrameBuilder:
         if self._df is None:
             raise RuntimeError("DataFrame has not been built yet. Call build() first.")
 
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
         self._df.to_parquet(path, index=False)
@@ -66,6 +67,7 @@ class PromptDataFrameBuilder:
         
         df = pd.read_parquet(path)
         if not df.empty and len(df) == 40:
+            self._df = df
             return df
         
         logger.warning("Loaded DataFrame is empty or does not have enough prompts. Falling back to building DataFrame.")

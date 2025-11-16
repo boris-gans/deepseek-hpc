@@ -12,8 +12,11 @@ from dotenv import load_dotenv
 import torch
 
 from .. import utils
-from data.prompts import PromptRepository, PromptFileSet
-from data.table import PromptDataFrameBuilder
+from src.data.prompts import PromptRepository, PromptFileSet
+from src.data.table import PromptDataFrameBuilder
+from src.inference.fireworksAI_client import FireworksAICompletionClient
+from src.inference.local_runner import LocalInferenceRunner
+
 
 load_dotenv()
 
@@ -24,12 +27,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description="DeepSeek distributed inference entry point."
     )
     parser.add_argument(
-        "--input",
-        type=Path,
-        required=True,
-        help="File containing newline separated prompts.",
-    )
-    parser.add_argument(
         "--output",
         type=Path,
         default="results/local_debug.jsonl",
@@ -37,8 +34,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--override",
-        type=bool,
-        default=True,
+        action="store_true",
+        help="Reuse existing dataframes saved as parquets earlier.",
+    )
+    parser.add_argument(
+        "--no-override",
+        dest="override",
+        action="store_false",
+        help="Reuse existing dataframes saved as parquets earlier.",
+    )
+    parser.set_defaults(override=True)
+    parser.add_argument(
+        "--variant",
+        type=str,
+        default=None,
+        help="Reuse existing dataframes saved as parquets earlier ('2k'/'4k').",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
         help="Reuse existing dataframes saved as parquets earlier.",
     )
     parser.add_argument(
@@ -172,24 +187,36 @@ def main(argv: Sequence[str] | None = None) -> None:
     logger = utils.setup_logging(level=args.log_level.upper())
     tracker = utils.MetricsTracker()
 
-    logger.info("Loading prompts from %s", args.input)
+    # Clean args
+    if args.limit is not None and args.limit > 20:
+        logger.warning("Limit can be at most 20, ignoring argument.")
+        args.limit = None
+    if args.variant is not None and args.variant not in ("2k", "4k"):
+        logger.warning("Variant must be either '2k' or '4k', ignoring argumnet.")
+        args.variant = None
+
+
+    logger.info("Loading prompts and creating DataFrame")
 
     df = None
     df_acc = None
 
     if not args.override:
+        print(Path(os.getenv("SAVE_PATH_ACC")).exists())
         if Path(os.getenv("SAVE_PATH_ACC")).exists():
+            logger.info("Found df_acc parquet, loading and skipping initialization.")
             df_builder = PromptDataFrameBuilder()
             df_acc = df_builder.load_df_from_parquet(path=os.getenv("SAVE_PATH_ACC"))
 
         if df_acc is None and Path(os.getenv("SAVE_PATH_BASE")).exists():
             # If df_acc is a valid df then we don't care about the base df
+            logger.info("Found base df parquet, loading and skipping initialization.")
             df_builder = PromptDataFrameBuilder()
             df = df_builder.load_df_from_parquet(path=os.getenv("SAVE_PATH_BASE"))
 
     if df_acc is None and df is None:
         # Skip building the base df if either DataFrames already exist
-        prompt_file_set = PromptFileSet(path_2k=os.getenv("PATH_2K"), path_4k=os.getenv("PATH_4K"))
+        prompt_file_set = PromptFileSet(path_2k=os.getenv("PATH_2K"), path_4k=os.getenv("PATH_4K"), variant=args.variant, limit=args.limit)
         prompt_repository = PromptRepository(file_set=prompt_file_set)
         prompts = prompt_repository.load_all()
 
@@ -198,9 +225,35 @@ def main(argv: Sequence[str] | None = None) -> None:
 
         df_builder.persist(path=os.getenv("SAVE_PATH_BASE"))
 
-    # openai call
-    # check for df_acc, if None then load
-        # otherwise, continue with cluster inference (or debug inference)
+
+    if df_acc is None:
+        logger.info(
+            "Getting baseline response data for variant '%s' with limit '%s'",
+            args.variant if args.variant else "all",
+            str(args.limit) if args.limit else "all"
+        )
+        # return
+        # Initialize api client for populating baseline response data
+        firework_client = FireworksAICompletionClient(
+            model_name=os.getenv("MODEL_NAME"),
+            api_key=os.getenv("FIREWORKS_API_KEY"),
+        )
+        baseline_inference = LocalInferenceRunner(
+            client=firework_client,
+            dataframe=df,
+        )
+        df_acc = baseline_inference.run(
+            variant=args.variant,
+            limit=args.limit,
+        )
+        baseline_inference.persist(path=os.getenv("SAVE_PATH_ACC"))
+
+
+    return
+
+    # TODO: implement node_runtime and slurm config factory
+    # TODO: implement debug inference mode (local)
+    # TODO: implement acc metrics
 
 
     logger.info(

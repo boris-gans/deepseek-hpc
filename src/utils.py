@@ -15,7 +15,7 @@ from typing import DefaultDict, Dict, Iterator, List, Optional
 
 def setup_logging(
     *,
-    name: str = "deepseek",
+    name: str = "main",
     level: str = "INFO",
     log_file: Optional[str] = None,
 ) -> logging.Logger:
