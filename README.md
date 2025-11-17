@@ -121,7 +121,7 @@ python -m src.inference --override
 python -m src.inference --no-override 
 
 # Variant flag to load only 2k/4k prompts, limit flag to specify amount of prompts to load from each variant
-python -m src.inference --override --variant=2k --limit=10
+python -m src.inference --override --variant=2k --limit=1
 ```
 
 **Outdated:**
@@ -150,7 +150,9 @@ python -m src.orchestrator --input data/sample_inputs.txt --local_debug --num_wo
 - **Hosting Updated:** https://fireworks.ai/
   - https://app.fireworks.ai/models/fireworks/gpt-oss-20b
   - https://app.fireworks.ai/models/fireworks/gpt-oss-120b
+  - https://fireworks.ai/models/fireworks/llama-v2-13b-chat
 
 - **Model Choices:**
   - https://huggingface.co/openai/gpt-oss-20b
   - https://huggingface.co/openai/gpt-oss-120b
+  - https://huggingface.co/meta-llama/Llama-2-13b-chat
