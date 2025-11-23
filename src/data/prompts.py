@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -164,3 +165,44 @@ class PromptRepository:
     def get_by_id(self, prompt_id: str) -> Sequence[PromptRecord]:
         """Fetch all variants associated with a specific prompt identifier."""
         raise NotImplementedError("Prompt lookup is not implemented yet.")
+
+    def export_prompts_jsonl(self, output_path: Optional[Path] = None) -> Path:
+        """Write all loaded prompts to a JSONL file for Slurm runs."""
+        # Determine output location (default: project_root/slurm/prompts.jsonl)
+        if output_path is None:
+            output_path = Path(__file__).resolve().parents[2] / "slurm" / "prompts.jsonl"
+
+        # Ensure prompts are loaded
+        if not self.records_2k and not self.records_4k:
+            self.load_all()
+
+        records = self.records_2k + self.records_4k
+        if not records:
+            raise RuntimeError("No prompt records available to export.")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Sort by variant then numeric index to keep deterministic ordering
+        def _sort_key(rec: PromptRecord) -> tuple[str, int]:
+            try:
+                _, idx = rec.prompt_id.split("_", 1)
+                return rec.variant, int(idx)
+            except Exception:
+                return rec.variant, 0
+
+        with output_path.open("w", encoding="utf-8") as handle:
+            for rec in sorted(records, key=_sort_key):
+                handle.write(
+                    json.dumps(
+                        {
+                            "id": rec.prompt_id,
+                            "variant": rec.variant,
+                            "prompt": rec.prompt,
+                            "token_budget": rec.token_budget,
+                        }
+                    )
+                    + "\n"
+                )
+
+        logger.info("Exported %d prompts to %s", len(records), output_path)
+        return output_path

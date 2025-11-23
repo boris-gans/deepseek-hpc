@@ -245,9 +245,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         # Skip building the base df if either DataFrames already exist
         prompt_file_set = PromptFileSet(path_2k=os.getenv("PATH_2K"), path_4k=os.getenv("PATH_4K"), variant=args.variant, limit=args.limit)
         prompt_repository = PromptRepository(file_set=prompt_file_set)
-        prompt_records = prompt_repository.load_all()
-        prompts = [record.prompt for record in prompt_records]
 
+        # Load all prompts into memory
+        prompt_records = prompt_repository.load_all()
+        # Save loaded prompts as jsonl file to use in the cluster
+        prompt_save_path = prompt_repository.export_prompts_jsonl()
+        logger.info(f"Successfully saved prompts at {prompt_save_path}")
+
+        prompts = [record.prompt for record in prompt_records]
         df_builder = PromptDataFrameBuilder(prompts=prompt_records)
         df = df_builder.build()
 
@@ -278,7 +283,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     
 
-    # return
+    return
 
     logger.info(
         "Starting inference (%s mode) with batch_size=%d",

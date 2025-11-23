@@ -23,9 +23,11 @@ fi
 if [[ ! -f "${EXP_CONFIG_PATH}" ]]; then
   cat > "${EXP_CONFIG_PATH}" <<'EOF'
 {
-  "model_name": "meta-llama/Llama-3.3-70B-Instruct",
-  "prompt_variant": "2k",
-  "batch_size": 4
+  "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+  "prompt_path": "/workspace/pipeline_run/prompts.jsonl",
+  "max_new_tokens": 64,
+  "temperature": 0.0,
+  "seed": 42
 }
 EOF
   echo "Wrote placeholder exp_config.json to ${EXP_CONFIG_PATH}"

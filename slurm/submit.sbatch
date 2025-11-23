@@ -33,7 +33,7 @@ if [[ -z "${APPAINTER_IMAGE}" ]]; then
 fi
 
 # Profiling mode for run.sh: "none", "nsys", or "perf"
-export PROFILER="${PROFILER:-none}"
+export PROFILER="${PROFILER:-nsys}"
 
 export PROJECT_ROOT
 export EXPERIMENT_ROOT

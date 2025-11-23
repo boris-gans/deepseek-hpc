@@ -1,0 +1,31 @@
+{
+  "model": {
+    "model_path": "/workspace/models/llama-3.1-8b",
+    "model_name": "meta-llama/Llama-3.1-8B-Instruct",
+    "tokenizer_path": "/workspace/models/llama-3.1-8b",
+    "precision": "bf16"
+  },
+  
+
+  "inference": {
+    "max_new_tokens": 256,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "batch_size": 1
+  },
+
+  "parallelism": {
+    "pipeline_parallel_size": 2,
+    "tensor_parallel_size": 1,
+    "data_parallel_size": 1
+  },
+
+  "inputs": {
+    "prompt_path": "/workspace/pipeline_run/prompts.jsonl"
+  },
+
+  "outputs": {
+    "output_dir": "/workspace/pipeline_run/outputs",
+    "write_per_rank": true
+  }
+}
