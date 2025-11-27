@@ -6,8 +6,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --time=00:30:00
 #SBATCH --partition=gpu
-#SBATCH --output=/home/%u/hpc-runs/%x-%j.out
-#SBATCH --error=/home/%u/hpc-runs/%x-%j.err
+#SBATCH --output=/scratch/%u/hpc-runs/%x-%j.out
+#SBATCH --error=/scratch/%u/hpc-runs/%x-%j.err
 
 # submit.sbatch
 # Single pipeline-parallel launch with fixed config paths.
@@ -19,14 +19,15 @@ set -euo pipefail
 # Paths and image to adjust for your cluster
 #############################################
 
-# Shared project root on host (keep /home usage narrow)
-PROJECT_ROOT="${PROJECT_ROOT:-/home/${USER}/hpc-pipeline}"
+# Shared project root on host (keep /home usage narrow). Use scratch for runtime data.
+PROJECT_ROOT="${PROJECT_ROOT:-/scratch/${USER}/pipeline_run}"
 
-# Fixed experiment root (host-side)
-EXPERIMENT_ROOT="${EXPERIMENT_ROOT:-${PROJECT_ROOT}/pipeline_run}"
+# Fixed experiment root (host-side) matches the mount point /workspace inside the container.
+EXPERIMENT_ROOT="${EXPERIMENT_ROOT:-${PROJECT_ROOT}}"
 
 # Appainter image (build/push this separately)
-APPAINTER_IMAGE="${APPAINTER_IMAGE:-}"
+# Prefer storing the SIF in /project/${USER}/appainter/appainter.sif
+APPAINTER_IMAGE="${APPAINTER_IMAGE:-/project/${USER}/appainter/appainter.sif}"
 if [[ -z "${APPAINTER_IMAGE}" ]]; then
   echo "APPAINTER_IMAGE is not set. Export it before calling sbatch." >&2
   exit 1
@@ -42,7 +43,7 @@ export DS_CONFIG_PATH="${DS_CONFIG_PATH:-${EXPERIMENT_ROOT}/ds_config.json}"
 export OUTPUT_DIR="${OUTPUT_DIR:-${EXPERIMENT_ROOT}/outputs}"
 
 mkdir -p "${OUTPUT_DIR}"
-mkdir -p "/home/${USER}/hpc-runs"
+mkdir -p "/scratch/${USER}/hpc-runs"
 
 echo "Job ${SLURM_JOB_NAME} starting on nodes: ${SLURM_JOB_NODELIST}"
 echo "Experiment root: ${EXPERIMENT_ROOT}"

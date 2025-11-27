@@ -150,11 +150,125 @@ python -m src.orchestrator --input data/sample_inputs.txt --local_debug --num_wo
 - **Hosting Updated:** https://fireworks.ai/
   - https://app.fireworks.ai/models/fireworks/gpt-oss-20b
   - https://app.fireworks.ai/models/fireworks/gpt-oss-120b
-  - https://fireworks.ai/models/fireworks/llama-v2-13b-chat
-  - or grok
+- https://fireworks.ai/models/fireworks/llama-v2-13b-chat
+- or grok
 
 - **Model Choices:**
   - https://huggingface.co/openai/gpt-oss-20b
   - https://huggingface.co/openai/gpt-oss-120b
   - https://huggingface.co/meta-llama/Llama-2-13b-chat
   - or llama 3.1 7B, qwen 3 8B
+
+## Cluster Runtime Layout
+
+Professor guidance: keep code tiny in `/home`, persist important assets in `/project`, and put large/temporary runtime data in `/scratch`. On this cluster you have `/home/user49/projects` and `/scratch/user49`. The job should mount `/scratch/user49/pipeline_run` (shared, fast) into `/workspace` for all nodes; that is where configs, outputs, and the Hugging Face model cache live. Only `/slurm`, `env/appainter.sif`, and `run_distributed_inference.py` are staged; the model downloads at runtime into shared storage so all nodes reuse it.
+
+```
+Host layout (what exists before sbatch)
+/home/user49/projects/distributed-inference/   # code only (small)
+├── slurm/                                     # submit.sbatch, run.sh, etc.
+├── run_distributed_inference.py               # source copy
+└── env/appainter.sif                          # if small; otherwise place in /project/user49/appainter/appainter.sif
+
+/project/user49/appainter/                     # persistent, if available (preferred spot for the SIF)
+└── appainter.sif                              # built from env/appainter.def
+
+/scratch/user49/pipeline_run/                  # EXPERIMENT_ROOT (shared across nodes/ranks; mounted to /workspace)
+├── exp_config.json                            # you place here before sbatch
+├── ds_config.json                             # you place here before sbatch
+├── slurm/                                     # optional copy of run.sh if you launch via /workspace/slurm/run.sh
+├── outputs/                                   # created at runtime (shared)
+│   ├── rank_0.log
+│   ├── rank_1.log
+│   ├── completions_rank_0.jsonl
+│   ├── completions_rank_1.jsonl
+│   ├── sacct_<jobid>.txt                      # if sacct available (written by rank 1)
+│   ├── nsys_rank_<r>.*                        # if PROFILER=nsys
+│   └── perf_rank_<r>.txt                      # if PROFILER=perf
+└── hf_cache/                                  # Hugging Face cache; model+tokenizer download happens here once
+
+Inside any node (container view during the job)
+/app/
+├── run_distributed_inference.py               # baked into the SIF
+└── (optionally) run.sh                        # if you baked it; otherwise use the bind-mounted copy
+/workspace/                                    # bind-mounted from /scratch/user49/pipeline_run
+├── exp_config.json
+├── ds_config.json
+├── outputs/                                   # shared logs/results/profiles
+└── hf_cache/                                  # shared model/tokenizer cache (downloaded once, reused by all nodes)
+
+Per-node local (outside the mount, if any)
+/tmp/, /var/tmp/                               # not used by default; no model copies here unless you change HF cache
+```
+
+### Prof instructions
+How to use each filesystem
+/home – small, shared, for code only
+Use /home/<username> only for:
+
+Code and small repositories
+Job scripts (.sbatch)
+Config files, dotfiles
+Very small test data
+Do NOT keep here:
+
+Conda / virtualenv installations
+Large datasets
+Model checkpoints
+Large log / output files
+If you currently have large files or directories in /home, please move them to /project or /scratch as appropriate (see below).
+
+
+
+/project – persistent project data
+Use /project for data you want to keep:
+
+Datasets used by your assignments or projects
+Saved model checkpoints
+Important results and plots
+Shared course material per group
+Typical pattern:
+
+ 
+/project/userXX/...
+*or per group*
+/project/groupA/...
+ 
+Think of /project as your long-term storage on the cluster.
+
+
+
+/scratch – temporary, large, can be deleted
+Use /scratch for temporary, high-volume data, for example:
+
+Intermediate files created during jobs
+Large temporary outputs
+Anything that can be recomputed
+Example:
+
+ 
+/scratch/userXX/run1/...
+You should assume /scratch may be cleaned up periodically. Do not rely on it for long-term storage.
+
+
+
+How to use it:
+
+Check your /home usage
+On a login node:
+ 
+cd ~
+du -sh *
+If you see large folders (GBs), move them:
+Long-term data → /project/<username>/...
+Temporary / job scratch → /scratch/<username>/...
+For new work:
+Keep /home for code + small files only.
+Point your jobs to run in /project or /scratch, not /home.
+
+
+When /home fills up:
+
+Logins can fail.
+Jobs can crash or fail to start.
+The whole class is affected.

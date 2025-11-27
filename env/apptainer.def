@@ -12,7 +12,7 @@ From: nvidia/cuda:12.2.0-devel-ubuntu22.04
     export PATH=/opt/nsight-systems/bin:$PATH
 
     # Avoid HF cache warnings
-    export HF_HOME=/workspace/.cache/huggingface
+    export HF_HOME=/workspace/hf_cache
 
     # Ensure Python finds /app
     export PYTHONPATH=/app:$PYTHONPATH
@@ -58,6 +58,7 @@ From: nvidia/cuda:12.2.0-devel-ubuntu22.04
 
 %files
     run_distributed_inference.py /app/run_distributed_inference.py
+    slurm/run.sh /app/run.sh
 
 %runscript
     exec python3 /app/run_distributed_inference.py "$@"

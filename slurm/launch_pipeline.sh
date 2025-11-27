@@ -7,7 +7,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SBATCH_SCRIPT="${ROOT_DIR}/slurm/submit.sbatch"
 
 # Host-side paths for configs and outputs (override via env as needed).
-PIPELINE_ROOT="${PIPELINE_ROOT:-${ROOT_DIR}/experiments/pipeline_run}"
+# Use scratch for runtime data to follow cluster guidance.
+PIPELINE_ROOT="${PIPELINE_ROOT:-/scratch/${USER}/pipeline_run}"
 EXP_CONFIG_PATH="${EXP_CONFIG_PATH:-${PIPELINE_ROOT}/exp_config.json}"
 DS_CONFIG_PATH="${DS_CONFIG_PATH:-${PIPELINE_ROOT}/ds_config.json}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PIPELINE_ROOT}/outputs}"
@@ -15,7 +16,10 @@ OUTPUT_DIR="${OUTPUT_DIR:-${PIPELINE_ROOT}/outputs}"
 mkdir -p "${PIPELINE_ROOT}" "${OUTPUT_DIR}"
 
 if [[ -z "${APPAINTER_IMAGE:-}" ]]; then
-  echo "APPAINTER_IMAGE is not set. Export it to your container image before submitting." >&2
+  APPAINTER_IMAGE="/project/${USER}/appainter/appainter.sif"
+fi
+if [[ ! -f "${APPAINTER_IMAGE}" ]]; then
+  echo "APPAINTER_IMAGE is not set or not found at ${APPAINTER_IMAGE}. Export it to your container image before submitting." >&2
   exit 1
 fi
 
@@ -24,7 +28,7 @@ if [[ ! -f "${EXP_CONFIG_PATH}" ]]; then
   cat > "${EXP_CONFIG_PATH}" <<'EOF'
 {
   "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-  "prompt_path": "/workspace/pipeline_run/prompts.jsonl",
+  "prompt_path": "/workspace/prompts.jsonl",
   "max_new_tokens": 64,
   "temperature": 0.0,
   "seed": 42
