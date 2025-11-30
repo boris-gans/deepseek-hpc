@@ -1,1 +1,11 @@
-# Module load list placeholder for Slurm environments requiring PyTorch, DeepSpeed, NCCL, and Nsight tooling.
+# Load these modules on the login node before building/running:
+#
+# - apptainer        # container runtime + build support
+# - cuda/12.2        # matches the base image in env/apptainer.def
+# - nsight-systems   # CLI tracer used when PROFILER=nsys
+# - gcc/11           # toolchain for any native extensions
+
+apptainer
+cuda/12.2
+nsight-systems
+gcc/11

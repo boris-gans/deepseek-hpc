@@ -1,3 +1,6 @@
+#
+# Build this SIF into /home/$USER/scratch/group1/appainter/appainter.sif to avoid filling the projects/home quota.
+
 Bootstrap: docker
 From: nvidia/cuda:12.2.0-devel-ubuntu22.04
 

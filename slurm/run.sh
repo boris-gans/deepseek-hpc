@@ -11,7 +11,7 @@ set -euo pipefail
 # Basic configuration
 ############################
 
-# Shared experiment root (mounted from host). We bind /scratch/$USER/pipeline_run -> /workspace.
+# Shared experiment root (mounted from host). We bind /home/$USER/scratch/group1/pipeline_run -> /workspace.
 EXPERIMENT_ROOT="${EXPERIMENT_ROOT:-/workspace}"
 
 # Fixed config paths for the single strategy
