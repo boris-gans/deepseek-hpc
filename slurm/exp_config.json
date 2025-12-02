@@ -21,11 +21,11 @@
   },
 
   "inputs": {
-    "prompt_path": "/workspace/pipeline_run/prompts.jsonl"
+    "prompt_path": "/workspace/prompts.jsonl"
   },
 
   "outputs": {
-    "output_dir": "/workspace/pipeline_run/outputs",
+    "output_dir": "/workspace/outputs",
     "write_per_rank": true
   }
 }

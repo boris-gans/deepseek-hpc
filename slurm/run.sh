@@ -7,6 +7,9 @@
 
 set -euo pipefail
 
+# Ensure Python can import files from the bind-mounted repo at /app
+export PYTHONPATH="/app:${PYTHONPATH:-}"
+
 ############################
 # Basic configuration
 ############################

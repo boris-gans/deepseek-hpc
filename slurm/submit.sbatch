@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=00:30:00
-#SBATCH --partition=gpu
+#SBATCH --partition=gpu-node
 #SBATCH --output=/home/%u/scratch/group1/hpc-runs/%x-%j.out
 #SBATCH --error=/home/%u/scratch/group1/hpc-runs/%x-%j.err
 # Update the paths above if you change SCRATCH_ROOT.
@@ -23,15 +23,25 @@ set -euo pipefail
 # Shared project root on host (keep /home usage narrow). Use scratch for runtime data.
 SCRATCH_ROOT="${SCRATCH_ROOT:-/home/${USER}/scratch/group1}"
 PROJECT_ROOT="${PROJECT_ROOT:-${SCRATCH_ROOT}/pipeline_run}"
+CODE_ROOT="${CODE_ROOT:-/home/${USER}/projects/distributed-inference}"
 
 # Fixed experiment root (host-side) matches the mount point /workspace inside the container.
 EXPERIMENT_ROOT="${EXPERIMENT_ROOT:-${PROJECT_ROOT}}"
 
-# Appainter image (build/push this separately)
-# Prefer storing the SIF on scratch to avoid filling projects/home; rebuild if purged.
-APPAINTER_IMAGE="${APPAINTER_IMAGE:-${SCRATCH_ROOT}/appainter/appainter.sif}"
+# Apptainer image: prefer the shared PyTorch SIF provided on the cluster.
+# Override via APPAINTER_IMAGE if your cluster stores it elsewhere.
+APPAINTER_IMAGE="${APPAINTER_IMAGE:-/home/user49/projects/def-sponsor00/shared/images/pytorch-2.3.1-cuda11.8.sif}"
 if [[ -z "${APPAINTER_IMAGE}" ]]; then
   echo "APPAINTER_IMAGE is not set. Export it before calling sbatch." >&2
+  exit 1
+fi
+if [[ ! -f "${APPAINTER_IMAGE}" ]]; then
+  echo "Apptainer image not found at ${APPAINTER_IMAGE}. Override APPAINTER_IMAGE to the provided SIF." >&2
+  exit 1
+fi
+
+if [[ ! -d "${CODE_ROOT}" ]]; then
+  echo "CODE_ROOT ${CODE_ROOT} does not exist. Point CODE_ROOT to the repo with slurm/run.sh." >&2
   exit 1
 fi
 
@@ -55,19 +65,21 @@ echo "DeepSpeed config: ${DS_CONFIG_PATH}"
 echo "Output dir: ${OUTPUT_DIR}"
 echo "Image: ${APPAINTER_IMAGE}"
 echo "Scratch root: ${SCRATCH_ROOT}"
+echo "Code root: ${CODE_ROOT}"
 
 #############################################
 # Launch containerized run.sh on all tasks
 #############################################
 
 # srun will start one task per node (because of --ntasks-per-node=1)
-# Each task runs a separate Appainter container, calling /app/run.sh inside.
+# Each task runs a separate Apptainer container, calling /app/slurm/run.sh inside.
 # All tasks see the same /workspace (mounted from PROJECT_ROOT).
 
-srun appainter run \
-    --mount "${PROJECT_ROOT}:/workspace" \
+srun apptainer exec --nv \
+    --bind "${PROJECT_ROOT}:/workspace" \
+    --bind "${CODE_ROOT}:/app" \
     "${APPAINTER_IMAGE}" \
-    /app/run.sh
+    bash /app/slurm/run.sh
 
 echo "Job ${SLURM_JOB_ID} finished."
 
