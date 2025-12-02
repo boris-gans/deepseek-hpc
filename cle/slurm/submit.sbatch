@@ -46,8 +46,7 @@ if [[ ! -d "${CODE_ROOT}" ]]; then
 fi
 
 # Profiling mode for run.sh: "none", "nsys", or "perf"
-# Default to none because the shared PyTorch SIF does not include nsys/perf.
-export PROFILER="${PROFILER:-none}"
+export PROFILER="${PROFILER:-nsys}"
 
 export PROJECT_ROOT
 export EXPERIMENT_ROOT

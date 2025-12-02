@@ -74,31 +74,21 @@ RANK_LOG="${OUTPUT_DIR}/rank_${RANK}.log"
 
 case "${PROFILER}" in
   nsys)
-    if command -v nsys >/dev/null 2>&1; then
-      echo "[rank ${RANK}] Running under Nsight Systems..." | tee -a "${RANK_LOG}"
-      # Adjust Nsight options as needed
-      nsys profile \
-        --force-overwrite=true \
-        --output="${OUTPUT_DIR}/nsys_rank_${RANK}" \
-        --capture-range=nvtx \
-        --capture-range-end=stop \
-        "${BASE_CMD[@]}" 2>&1 | tee -a "${RANK_LOG}"
-    else
-      echo "[rank ${RANK}] PROFILER=nsys requested but nsys not found; running without profiler." | tee -a "${RANK_LOG}"
+    echo "[rank ${RANK}] Running under Nsight Systems..." | tee -a "${RANK_LOG}"
+    # Adjust Nsight options as needed
+    nsys profile \
+      --force-overwrite=true \
+      --output="${OUTPUT_DIR}/nsys_rank_${RANK}" \
+      --capture-range=nvtx \
+      --capture-range-end=stop \
       "${BASE_CMD[@]}" 2>&1 | tee -a "${RANK_LOG}"
-    fi
     ;;
 
   perf)
-    if command -v perf >/dev/null 2>&1; then
-      echo "[rank ${RANK}] Running under perf..." | tee -a "${RANK_LOG}"
-      perf stat -d -d -d \
-        --output="${OUTPUT_DIR}/perf_rank_${RANK}.txt" \
-        "${BASE_CMD[@]}" 2>&1 | tee -a "${RANK_LOG}"
-    else
-      echo "[rank ${RANK}] PROFILER=perf requested but perf not found; running without profiler." | tee -a "${RANK_LOG}"
+    echo "[rank ${RANK}] Running under perf..." | tee -a "${RANK_LOG}"
+    perf stat -d -d -d \
+      --output="${OUTPUT_DIR}/perf_rank_${RANK}.txt" \
       "${BASE_CMD[@]}" 2>&1 | tee -a "${RANK_LOG}"
-    fi
     ;;
 
   none|*)
