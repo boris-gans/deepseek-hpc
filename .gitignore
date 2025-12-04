@@ -16,3 +16,10 @@ local
 # notes.md
 # trash*
 results/local_debug.jsonl
+
+# MODEL INFO
+models/openllama-7b/*.bin
+models/openllama-7b/*.model
+models/openllama-7b/*.json
+models/openllama-7b/.gitattributes
+models/openllama-7b/.cache/

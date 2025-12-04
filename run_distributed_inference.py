@@ -35,6 +35,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 @dataclass
 class ExpConfig:
+    model_path: Optional[Path]
     model_name: str
     prompt_path: Path
     max_new_tokens: int
@@ -58,8 +59,11 @@ def load_json(path: Path) -> dict:
 def load_exp_config(path: Path) -> ExpConfig:
     cfg = load_json(path)
     try:
+        model_section = cfg["model"]
+        model_path = model_section.get("model_path")
         return ExpConfig(
-            model_name=cfg["model"]["model_name"],
+            model_path=Path(model_path) if model_path else None,
+            model_name=model_section["model_name"],
             prompt_path=Path(cfg["inputs"]["prompt_path"]),
             max_new_tokens=int(cfg["inference"].get("max_new_tokens", 64)),
             temperature=float(cfg["inference"].get("temperature", 0.0)),
@@ -103,7 +107,12 @@ def set_hf_cache(root: Path, logger: logging.Logger) -> None:
 
 
 def load_tokenizer(model_name: str, cache_dir: Path, logger: logging.Logger):
-    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        cache_dir=cache_dir,
+        use_fast=False,
+        local_files_only=True,
+    )
     # Ensure pad token exists for attention masks
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -128,6 +137,7 @@ def partition_model(
         cache_dir=cache_dir,
         low_cpu_mem_usage=True,
         device_map={"": "cpu"},
+        local_files_only=True,
     )
     num_layers = model.config.num_hidden_layers
     hidden_size = model.config.hidden_size
@@ -394,10 +404,12 @@ def main() -> None:
     prompts = read_prompts(exp_cfg.prompt_path)
 
     cache_dir = Path(os.environ["HF_HOME"])
-    tokenizer = load_tokenizer(exp_cfg.model_name, cache_dir, logger)
+    # If model_path is provided, use it; otherwise fall back to model_name (HF hub)
+    model_ref = str(exp_cfg.model_path) if exp_cfg.model_path else exp_cfg.model_name
+    tokenizer = load_tokenizer(model_ref, cache_dir, logger)
 
     stage_module, hidden_size = partition_model(
-        model_name=exp_cfg.model_name,
+        model_name=model_ref,
         cache_dir=cache_dir,
         split_idx=None,
         device=device,

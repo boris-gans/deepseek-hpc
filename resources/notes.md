@@ -65,3 +65,23 @@ drm_kms_helper        266240  4 drm_shmem_helper,hyperv_drm,drm_ttm_helper,nvidi
 drm                   811008  8 drm_kms_helper,drm_shmem_helper,nvidia,hyperv_drm,drm_ttm_helper,nvidia_drm,ttm
 user49@gpu-node1 ~/scratch/group1/pipeline_run $ which nvidia-smi
 /usr/bin/nvidia-smi
+
+# your recommended check
+apptainer exec --nv \
+>   --bind /home/$USER/scratch/group1/pipeline_run:/tmp/workspace \
+>   --bind /home/$USER/projects/def-sponsor00/user49/distributed-inference:/app \
+>   "$APPAINTER_IMAGE" bash -lc '
+>     echo "=== nvidia-smi in container ==="
+>     nvidia-smi || exit 1
+>     echo "=== torch cuda check ==="
+>     python - <<PY
+> import torch
+> print("torch:", torch.__version__)
+> print("cuda available:", torch.cuda.is_available())
+> print("device_count:", torch.cuda.device_count())
+> if torch.cuda.is_available():
+>     print("device0:", torch.cuda.get_device_name(0))
+> PY'
+=== nvidia-smi in container ===
+NVIDIA-SMI couldn't find libnvidia-ml.so library in your system. Please make sure that the NVIDIA Display Driver is properly installed and present in your system.
+Please also try adding directory that contains libnvidia-ml.so to your system PATH.
