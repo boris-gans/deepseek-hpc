@@ -152,22 +152,25 @@ def partition_model(
 
     device_map = {}
 
-    for i in layer_ids:
-        device_map[f"model.layers.{i}"] = device.type  # usually "cuda"
+    for i in range(num_layers):
+        if i in layer_ids:
+            device_map[f"model.layers.{i}"] = device.type  # cuda
+        else:
+            device_map[f"model.layers.{i}"] = "meta"       # throwaway layers; other node loads these but must specify
 
     if stage == 0:
-        device_map["model.s"] = device.type
+        device_map["model.embed_tokens"] = device.type
 
         # Rank 0 does NOT take lm_head or final norm, load anyway to avoid error
-        device_map["model.norm"] = "cpu"
-        device_map["lm_head"] = "cpu"
+        device_map["model.norm"] = "meta"
+        device_map["lm_head"] = "meta"
     else:
         # Rank 1 keeps final layers + norm + lm_head
         device_map["model.norm"] = device.type
         device_map["lm_head"] = device.type
 
         # Load ALL required modules onto CPU, even if layer 2 won't use them (avoid error)
-        device_map["model.embed_tokens"] = "cpu"
+        device_map["model.embed_tokens"] = "meta"
 
     logger.info("Stage %d device_map=%s", stage, device_map)
 

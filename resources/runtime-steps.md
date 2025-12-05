@@ -9,7 +9,7 @@ rsync -av \
 
 
 rsync -av \
-  models/openllama-7b \
+  models/openllama-3b \
   user49@hpcie.labs.faculty.ie.edu:/home/user49/scratch/group1/models/
 ```
 
@@ -19,7 +19,7 @@ ssh hpcie
 
 SCRATCH_ROOT=/home/user49/scratch/group1
 PIPELINE_ROOT=${SCRATCH_ROOT}/pipeline_run
-
+™™£™
 mkdir -p ${PIPELINE_ROOT}/outputs ${SCRATCH_ROOT}/hpc-runs
 # Place prompts + configs under scratch so every node reads the same files
 cp /home/user49/projects/def-sponsor00/user49/distributed-inference/slurm/exp_config.json ${PIPELINE_ROOT}/exp_config.json
