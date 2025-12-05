@@ -1,8 +1,8 @@
 {
   "model": {
-    "model_path": "/workspace/models/openllama-7b",
-    "model_name": "openlm-research/openllama-7b",
-    "tokenizer_path": "/workspace/models/openllama-7b",
+    "model_path": "/workspace/models/openllama-3b",
+    "model_name": "openlm-research/openllama-3b",
+    "tokenizer_path": "/workspace/models/openllama-3b",
     "precision": "bf16"
   },
   

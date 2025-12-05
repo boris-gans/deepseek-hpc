@@ -30,7 +30,7 @@ from typing import List, Optional
 import torch
 import torch.distributed as dist
 from torch import nn
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
 
 @dataclass
@@ -129,33 +129,74 @@ def partition_model(
     stage: int,
     logger: logging.Logger,
 ) -> tuple[nn.Module, int]:
-    """Load the full model on CPU and keep only the layers for the given stage."""
-    logger.info("Loading model %s on CPU (this may take a while)...", model_name)
+
+    logger.info("Loading model %s for pipeline stage %d...", model_name, stage)
+
+    # STEP 1 — Load config only (safe, tiny memory)
+    config = AutoConfig.from_pretrained(
+        model_name,
+        cache_dir=cache_dir,
+        local_files_only=True,
+    )
+    num_layers = config.num_hidden_layers
+    hidden_size = config.hidden_size
+    split = split_idx or (num_layers // 2)
+
+    # STEP 2 — Build minimal device_map so this rank loads only its layers
+    if stage == 0:
+        # Layers 0 ... split-1 live on this GPU
+        layer_ids = list(range(0, split))
+    else:
+        # Layers split ... num_layers-1 live on this GPU
+        layer_ids = list(range(split, num_layers))
+
+    device_map = {}
+
+    for i in layer_ids:
+        device_map[f"model.layers.{i}"] = device.type  # usually "cuda"
+
+    if stage == 0:
+        device_map["model.s"] = device.type
+
+        # Rank 0 does NOT take lm_head or final norm, load anyway to avoid error
+        device_map["model.norm"] = "cpu"
+        device_map["lm_head"] = "cpu"
+    else:
+        # Rank 1 keeps final layers + norm + lm_head
+        device_map["model.norm"] = device.type
+        device_map["lm_head"] = device.type
+
+        # Load ALL required modules onto CPU, even if layer 2 won't use them (avoid error)
+        device_map["model.embed_tokens"] = "cpu"
+
+    logger.info("Stage %d device_map=%s", stage, device_map)
+
+    # STEP 3 — Load ONLY the layers for this stage (zero CPU spike)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
         cache_dir=cache_dir,
-        low_cpu_mem_usage=True,
-        device_map={"": "cpu"},
         local_files_only=True,
+        low_cpu_mem_usage=True,
+        device_map=device_map,  # <<< prevents full CPU load
     )
-    num_layers = model.config.num_hidden_layers
-    hidden_size = model.config.hidden_size
-    split = split_idx or (num_layers // 2)
+
+    # HF loads submodules directly to the right GPU → no manual trimming needed
+    # But your pipeline code expects a simplified Module, so extract it:
 
     base = model.model  # type: ignore[attr-defined]
+
+    stage_module = nn.Module()
+
     if stage == 0:
-        kept_layers = base.layers[:split]
-        stage_module = nn.Module()
         stage_module.embed_tokens = base.embed_tokens
-        stage_module.layers = nn.ModuleList(kept_layers)
-        stage_module.config = model.config
+        stage_module.layers = nn.ModuleList([base.layers[i] for i in layer_ids])
+        stage_module.config = config
     else:
-        kept_layers = base.layers[split:]
-        stage_module = nn.Module()
-        stage_module.layers = nn.ModuleList(kept_layers)
+        stage_module.layers = nn.ModuleList([base.layers[i] for i in layer_ids])
         stage_module.norm = base.norm
-        # Break weight tying so lm_head can live on a different device than embeddings.
+
+        # Reconstruct lm_head so it can sit on a different device if needed
         lm_head = model.lm_head
         cloned_head = nn.Linear(
             lm_head.in_features,
@@ -166,21 +207,20 @@ def partition_model(
         )
         cloned_head.weight.data.copy_(lm_head.weight.data)
         stage_module.lm_head = cloned_head
-        stage_module.config = model.config
+        stage_module.config = config
 
-    # Free memory from the discarded layers
-    del model
+    logger.info(
+        "Stage %d loads %d layers (%s) on device %s",
+        stage,
+        len(layer_ids),
+        "0..split" if stage == 0 else "split..end",
+        device,
+    )
 
     stage_module.to(device)
     stage_module.eval()
     torch.cuda.empty_cache()
-    logger.info(
-        "Stage %d keeping %d layers (%s) on device %s",
-        stage,
-        len(kept_layers),
-        "0..split" if stage == 0 else "split..end",
-        device,
-    )
+
     return stage_module, hidden_size
 
 
