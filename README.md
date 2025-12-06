@@ -1,4 +1,4 @@
-# Distributed Inference (v2):
+# Distributed Inference
 
 ## Overview
 Many large language models are too large to fit on a single GPU, so even inference requires multi-GPU, multi-node execution.
